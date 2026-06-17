@@ -39,7 +39,7 @@ class PlaylistsViewModel @Inject constructor(
             val playlist = Playlist(
                 name = name,
                 url = url,
-                epgUrl = epgUrl.ifBlank { null },
+                epgUrl = epgUrl?.ifBlank { null },
                 source = PlaylistSource.URL
             )
             val id = repository.addPlaylist(playlist)
