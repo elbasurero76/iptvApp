@@ -22,8 +22,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
-import com.google.android.gms.cast.framework.CastState
-import com.google.android.gms.cast.framework.CastStateListener
 import com.marcosrava.iptvplayer.R
 import com.marcosrava.iptvplayer.data.model.Channel
 import dagger.hilt.android.AndroidEntryPoint
@@ -39,15 +37,8 @@ class PlayerActivity : ComponentActivity() {
     private var castContext: CastContext? = null
     private lateinit var playerView: PlayerView
 
-    // Guardamos el MediaItem para poder dárselo al CastPlayer al conectar
+    // MediaItem guardado a nivel de clase para dárselo al CastPlayer
     private var currentMediaItem: MediaItem? = null
-
-    private val castStateListener = CastStateListener { state ->
-        when (state) {
-            CastState.CONNECTED -> switchToCastPlayer()
-            CastState.NOT_CONNECTED -> switchToLocalPlayer()
-        }
-    }
 
     companion object {
         const val EXTRA_CHANNEL_ID = "channel_id"
@@ -81,7 +72,11 @@ class PlayerActivity : ComponentActivity() {
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
 
-        // Cast
+        // Botón Cast
+        val castButton = findViewById<androidx.mediarouter.app.MediaRouteButton>(R.id.media_route_button)
+        CastButtonFactory.setUpMediaRouteButton(applicationContext, castButton)
+
+        // Obtener CastContext (puede fallar en devices sin Play Services)
         try {
             castContext = CastContext.getSharedInstance(this)
         } catch (e: Exception) {
@@ -89,15 +84,13 @@ class PlayerActivity : ComponentActivity() {
         }
 
         val channelName = intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: ""
-        val channelUrl = intent.getStringExtra(EXTRA_CHANNEL_URL) ?: ""
+        val channelUrl  = intent.getStringExtra(EXTRA_CHANNEL_URL)  ?: ""
         val channelLogo = intent.getStringExtra(EXTRA_CHANNEL_LOGO)
 
         initPlayer(channelUrl, channelName, channelLogo)
-
-        // Botón Cast
-        val castButton = findViewById<androidx.mediarouter.app.MediaRouteButton>(R.id.media_route_button)
-        CastButtonFactory.setUpMediaRouteButton(applicationContext, castButton)
     }
+
+    // ─── Player init ──────────────────────────────────────────────────────────
 
     private fun buildMediaItem(url: String, name: String, logoUrl: String?): MediaItem {
         val mimeType = when {
@@ -105,7 +98,7 @@ class PlayerActivity : ComponentActivity() {
                 MimeTypes.APPLICATION_M3U8
             url.contains(".ts", ignoreCase = true) ->
                 MimeTypes.VIDEO_MP2T
-            else -> MimeTypes.APPLICATION_M3U8  // Por defecto HLS para IPTV
+            else -> MimeTypes.APPLICATION_M3U8
         }
         return MediaItem.Builder()
             .setUri(url)
@@ -120,67 +113,73 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun initPlayer(url: String, name: String, logoUrl: String?) {
+        // 1. Construir y guardar el MediaItem
         currentMediaItem = buildMediaItem(url, name, logoUrl)
 
-        exoPlayer = ExoPlayer.Builder(this).build().also { player ->
-            playerView.player = player
-            player.setMediaItem(currentMediaItem!!)
-            player.prepare()
-            player.playWhenReady = true
+        // 2. ExoPlayer local
+        exoPlayer = ExoPlayer.Builder(this).build().also { ep ->
+            ep.setMediaItem(currentMediaItem!!)
+            ep.prepare()
+            ep.playWhenReady = true
         }
 
-        // Cast Player
+        // 3. CastPlayer — sólo usamos SessionAvailabilityListener, NO CastStateListener
+        //    para evitar doble disparo.
         castContext?.let { ctx ->
             castPlayer = CastPlayer(ctx).apply {
                 setSessionAvailabilityListener(object : SessionAvailabilityListener {
-                    override fun onCastSessionAvailable() {
-                        switchToCastPlayer()
-                    }
-
-                    override fun onCastSessionUnavailable() {
-                        switchToLocalPlayer()
-                    }
+                    override fun onCastSessionAvailable()   { switchToCastPlayer()  }
+                    override fun onCastSessionUnavailable() { switchToLocalPlayer() }
                 })
             }
 
+            // Si ya hay sesión Cast activa al abrir el reproductor, ir a Cast directamente
             if (castPlayer?.isCastSessionAvailable == true) {
                 switchToCastPlayer()
             } else {
-                setCurrentPlayer(exoPlayer!!)
+                playerView.player = exoPlayer
+                currentPlayer = exoPlayer
             }
         } ?: run {
-            setCurrentPlayer(exoPlayer!!)
+            // Sin Cast disponible
+            playerView.player = exoPlayer
+            currentPlayer = exoPlayer
         }
-
-        castContext?.addCastStateListener(castStateListener)
     }
 
-    private fun switchToCastPlayer() {
-        val cp = castPlayer ?: return
-        val mediaItem = currentMediaItem ?: return
+    // ─── Cambio de reproductor ────────────────────────────────────────────────
 
-        // Guardar posición del reproductor local
+    private fun switchToCastPlayer() {
+        // Guard: evita re-entrada si ya estamos en Cast
+        if (currentPlayer == castPlayer) return
+        val cp    = castPlayer       ?: return
+        val item  = currentMediaItem ?: return
+
         val position = exoPlayer?.currentPosition ?: 0L
 
-        // Dar el MediaItem al CastPlayer ANTES de reproducir
-        cp.setMediaItem(mediaItem, position)
-        cp.prepare()
-        cp.playWhenReady = true
-
-        playerView.player = null  // Liberar la vista del ExoPlayer
+        // Detener ExoPlayer y desvincularlo de la vista
         exoPlayer?.pause()
+        playerView.player = null
+
+        // Cargar el stream en el CastPlayer y reproducir
+        cp.setMediaItem(item)
+        cp.prepare()
+        cp.seekTo(position)
+        cp.playWhenReady = true
 
         currentPlayer = cp
         viewModel.setCasting(true)
     }
 
     private fun switchToLocalPlayer() {
+        // Guard: evita re-entrada si ya estamos en local
+        if (currentPlayer == exoPlayer) return
         val ep = exoPlayer ?: return
 
-        // Recuperar posición del CastPlayer si es posible
         val position = castPlayer?.currentPosition ?: 0L
         castPlayer?.stop()
 
+        // Restaurar ExoPlayer en la vista
         playerView.player = ep
         ep.seekTo(position)
         ep.playWhenReady = true
@@ -189,16 +188,11 @@ class PlayerActivity : ComponentActivity() {
         viewModel.setCasting(false)
     }
 
-    private fun setCurrentPlayer(player: Player) {
-        currentPlayer = player
-        if (player == exoPlayer) {
-            playerView.player = player
-        }
-    }
+    // ─── Ciclo de vida ────────────────────────────────────────────────────────
 
     override fun onResume() {
         super.onResume()
-        castContext?.addCastStateListener(castStateListener)
+        // Reanudar sólo si estamos en local y no en PiP
         if (viewModel.isCasting.value != true) {
             exoPlayer?.play()
         }
@@ -206,7 +200,6 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        castContext?.removeCastStateListener(castStateListener)
         if (!isInPictureInPictureMode && viewModel.isCasting.value != true) {
             exoPlayer?.pause()
         }
@@ -214,20 +207,18 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        castContext?.removeCastStateListener(castStateListener)
         castPlayer?.setSessionAvailabilityListener(null)
         castPlayer?.release()
         exoPlayer?.release()
-        exoPlayer = null
+        exoPlayer  = null
         castPlayer = null
+        currentPlayer = null
     }
+
+    // ─── PiP ─────────────────────────────────────────────────────────────────
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        enterPipMode()
-    }
-
-    private fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && exoPlayer?.isPlaying == true) {
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
