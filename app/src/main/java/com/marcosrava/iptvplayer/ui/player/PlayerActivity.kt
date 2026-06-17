@@ -7,14 +7,11 @@ import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
-import android.view.View
-import android.view.WindowInsetsController
+import androidx.activity.ComponentActivity
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.MediaItem
@@ -33,7 +30,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
-class PlayerActivity : AppCompatActivity() {
+class PlayerActivity : ComponentActivity() {
 
     private val viewModel: PlayerViewModel by viewModels()
 
@@ -97,18 +94,9 @@ class PlayerActivity : AppCompatActivity() {
 
         initPlayer(channelUrl, channelName, channelLogo, userAgent)
 
-        // Botón Cast en toolbar
-        val castButton = findViewById<View>(R.id.media_route_button)
-        CastButtonFactory.setUpMediaRouteButton(applicationContext, castButton as? android.widget.Button)
-
-        // Botón PiP
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            playerView.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
-                if (visibility == View.GONE) {
-                    // Ocultar UI del sistema cuando se ocultan controles
-                }
-            })
-        }
+        // Botón Cast
+        val castButton = findViewById<androidx.mediarouter.app.MediaRouteButton>(R.id.media_route_button)
+        CastButtonFactory.setUpMediaRouteButton(applicationContext, castButton)
     }
 
     private fun initPlayer(url: String, name: String, logoUrl: String?, userAgent: String?) {

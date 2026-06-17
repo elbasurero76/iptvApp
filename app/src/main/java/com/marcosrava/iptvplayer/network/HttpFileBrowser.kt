@@ -60,7 +60,7 @@ class HttpFileBrowser @Inject constructor(
     private fun isPythonHttpServer(html: String) =
         html.contains("python", ignoreCase = true) || html.contains("SimpleHTTP", ignoreCase = true)
 
-    private fun isNginxAutoindex(html) =
+    private fun isNginxAutoindex(html: String) =
         html.contains("nginx", ignoreCase = true)
 
     private fun isApacheAutoindex(html: String) =
@@ -94,8 +94,6 @@ class HttpFileBrowser @Inject constructor(
 
             val isDir = href.endsWith("/")
             val absoluteUrl = if (href.startsWith("http")) href else "$baseUrl$href"
-            val parentRow = link.parent()?.parent()
-            val sizeText = parentRow?.select("td")?.getOrNull(2)?.text()?.trim() ?: ""
 
             if (isDir || isMediaFile(name)) {
                 files.add(RemoteFile(name = name, url = absoluteUrl, isDirectory = isDir))

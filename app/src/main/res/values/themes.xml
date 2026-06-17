@@ -7,6 +7,5 @@
     <style name="Theme.IPTVPlayer.Player" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowFullscreen">true</item>
-        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o">shortEdges</item>
     </style>
 </resources>

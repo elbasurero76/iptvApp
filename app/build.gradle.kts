@@ -112,6 +112,12 @@ dependencies {
     // WorkManager
     implementation(libs.work.runtime.ktx)
 
+    // ConstraintLayout (para activity_player.xml)
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+
+    // MediaRouter (para Cast button en XML)
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+
     debugImplementation(libs.androidx.ui.tooling)
 }
 

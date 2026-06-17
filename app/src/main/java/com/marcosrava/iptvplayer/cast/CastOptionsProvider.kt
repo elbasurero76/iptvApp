@@ -5,7 +5,6 @@ import com.google.android.gms.cast.framework.CastOptions
 import com.google.android.gms.cast.framework.OptionsProvider
 import com.google.android.gms.cast.framework.SessionProvider
 import com.google.android.gms.cast.framework.media.CastMediaOptions
-import com.google.android.gms.cast.framework.media.MediaIntentReceiver
 import com.google.android.gms.cast.framework.media.NotificationOptions
 import com.marcosrava.iptvplayer.ui.player.PlayerActivity
 
@@ -21,10 +20,8 @@ class CastOptionsProvider : OptionsProvider {
             .build()
 
         return CastOptions.Builder()
-            .setReceiverApplicationId(
-                com.google.android.gms.cast.framework.CastContext.getSharedInstance(context)
-                    .let { "CC1AD845" } // Default Media Receiver App ID
-            )
+            // Default Media Receiver - funciona con cualquier Chromecast sin registro
+            .setReceiverApplicationId("CC1AD845")
             .setCastMediaOptions(mediaOptions)
             .build()
     }
