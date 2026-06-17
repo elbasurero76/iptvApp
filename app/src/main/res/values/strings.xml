@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">IPTV Player</string>
+    <string name="channels">Canales</string>
+    <string name="playlists">Listas</string>
+    <string name="favorites">Favoritos</string>
+    <string name="settings">Ajustes</string>
+    <string name="search_channels">Buscar canales...</string>
+    <string name="no_channels">Sin canales. Añade una lista M3U</string>
+    <string name="add_playlist">Añadir lista</string>
+    <string name="refresh">Actualizar</string>
+    <string name="cast_to_tv">Enviar a TV</string>
+    <string name="pip_mode">Modo pantalla dividida</string>
+</resources>
