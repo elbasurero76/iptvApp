@@ -116,34 +116,32 @@ class PlayerActivity : ComponentActivity() {
         // 1. Construir y guardar el MediaItem
         currentMediaItem = buildMediaItem(url, name, logoUrl)
 
-        // 2. ExoPlayer local
+        // 2. ExoPlayer local — asignamos la vista SIEMPRE aquí, antes de nada
         exoPlayer = ExoPlayer.Builder(this).build().also { ep ->
+            playerView.player = ep       // <-- siempre asignado, pase lo que pase con Cast
+            currentPlayer = ep
             ep.setMediaItem(currentMediaItem!!)
             ep.prepare()
             ep.playWhenReady = true
         }
 
-        // 3. CastPlayer — sólo usamos SessionAvailabilityListener, NO CastStateListener
-        //    para evitar doble disparo.
-        castContext?.let { ctx ->
-            castPlayer = CastPlayer(ctx).apply {
-                setSessionAvailabilityListener(object : SessionAvailabilityListener {
-                    override fun onCastSessionAvailable()   { switchToCastPlayer()  }
-                    override fun onCastSessionUnavailable() { switchToLocalPlayer() }
-                })
+        // 3. CastPlayer — sólo SessionAvailabilityListener para evitar doble disparo
+        try {
+            castContext?.let { ctx ->
+                castPlayer = CastPlayer(ctx).apply {
+                    setSessionAvailabilityListener(object : SessionAvailabilityListener {
+                        override fun onCastSessionAvailable()   { switchToCastPlayer()  }
+                        override fun onCastSessionUnavailable() { switchToLocalPlayer() }
+                    })
+                }
+                // Si ya hay sesión Cast activa al abrir el reproductor, cambiar a Cast
+                if (castPlayer?.isCastSessionAvailable == true) {
+                    switchToCastPlayer()
+                }
             }
-
-            // Si ya hay sesión Cast activa al abrir el reproductor, ir a Cast directamente
-            if (castPlayer?.isCastSessionAvailable == true) {
-                switchToCastPlayer()
-            } else {
-                playerView.player = exoPlayer
-                currentPlayer = exoPlayer
-            }
-        } ?: run {
-            // Sin Cast disponible
-            playerView.player = exoPlayer
-            currentPlayer = exoPlayer
+        } catch (e: Exception) {
+            // Si Cast falla por cualquier motivo, seguimos con ExoPlayer local
+            e.printStackTrace()
         }
     }
 
