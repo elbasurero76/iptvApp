@@ -27,7 +27,6 @@ import com.google.android.gms.cast.framework.CastStateListener
 import com.marcosrava.iptvplayer.R
 import com.marcosrava.iptvplayer.data.model.Channel
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class PlayerActivity : ComponentActivity() {
@@ -39,6 +38,9 @@ class PlayerActivity : ComponentActivity() {
     private var currentPlayer: Player? = null
     private var castContext: CastContext? = null
     private lateinit var playerView: PlayerView
+
+    // Guardamos el MediaItem para poder dárselo al CastPlayer al conectar
+    private var currentMediaItem: MediaItem? = null
 
     private val castStateListener = CastStateListener { state ->
         when (state) {
@@ -86,40 +88,43 @@ class PlayerActivity : ComponentActivity() {
             e.printStackTrace()
         }
 
-        val channelId = intent.getLongExtra(EXTRA_CHANNEL_ID, -1)
         val channelName = intent.getStringExtra(EXTRA_CHANNEL_NAME) ?: ""
         val channelUrl = intent.getStringExtra(EXTRA_CHANNEL_URL) ?: ""
         val channelLogo = intent.getStringExtra(EXTRA_CHANNEL_LOGO)
-        val userAgent = intent.getStringExtra(EXTRA_USER_AGENT)
 
-        initPlayer(channelUrl, channelName, channelLogo, userAgent)
+        initPlayer(channelUrl, channelName, channelLogo)
 
         // Botón Cast
         val castButton = findViewById<androidx.mediarouter.app.MediaRouteButton>(R.id.media_route_button)
         CastButtonFactory.setUpMediaRouteButton(applicationContext, castButton)
     }
 
-    private fun initPlayer(url: String, name: String, logoUrl: String?, userAgent: String?) {
+    private fun buildMediaItem(url: String, name: String, logoUrl: String?): MediaItem {
+        val mimeType = when {
+            url.contains(".m3u8", ignoreCase = true) || url.contains("hls", ignoreCase = true) ->
+                MimeTypes.APPLICATION_M3U8
+            url.contains(".ts", ignoreCase = true) ->
+                MimeTypes.VIDEO_MP2T
+            else -> MimeTypes.APPLICATION_M3U8  // Por defecto HLS para IPTV
+        }
+        return MediaItem.Builder()
+            .setUri(url)
+            .setMimeType(mimeType)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(name)
+                    .setArtworkUri(logoUrl?.let { android.net.Uri.parse(it) })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun initPlayer(url: String, name: String, logoUrl: String?) {
+        currentMediaItem = buildMediaItem(url, name, logoUrl)
+
         exoPlayer = ExoPlayer.Builder(this).build().also { player ->
             playerView.player = player
-
-            val mediaItem = MediaItem.Builder()
-                .setUri(url)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(name)
-                        .setArtworkUri(logoUrl?.let { android.net.Uri.parse(it) })
-                        .build()
-                )
-                .apply {
-                    // Detectar tipo MIME
-                    if (url.contains(".m3u8") || url.contains("hls")) {
-                        setMimeType(MimeTypes.APPLICATION_M3U8)
-                    }
-                }
-                .build()
-
-            player.setMediaItem(mediaItem)
+            player.setMediaItem(currentMediaItem!!)
             player.prepare()
             player.playWhenReady = true
         }
@@ -138,7 +143,6 @@ class PlayerActivity : ComponentActivity() {
                 })
             }
 
-            // Verificar si ya hay una sesión Cast activa
             if (castPlayer?.isCastSessionAvailable == true) {
                 switchToCastPlayer()
             } else {
@@ -152,54 +156,65 @@ class PlayerActivity : ComponentActivity() {
     }
 
     private fun switchToCastPlayer() {
-        castPlayer?.let {
-            setCurrentPlayer(it)
-            viewModel.setCasting(true)
-        }
+        val cp = castPlayer ?: return
+        val mediaItem = currentMediaItem ?: return
+
+        // Guardar posición del reproductor local
+        val position = exoPlayer?.currentPosition ?: 0L
+
+        // Dar el MediaItem al CastPlayer ANTES de reproducir
+        cp.setMediaItem(mediaItem, position)
+        cp.prepare()
+        cp.playWhenReady = true
+
+        playerView.player = null  // Liberar la vista del ExoPlayer
+        exoPlayer?.pause()
+
+        currentPlayer = cp
+        viewModel.setCasting(true)
     }
 
     private fun switchToLocalPlayer() {
-        exoPlayer?.let {
-            setCurrentPlayer(it)
-            viewModel.setCasting(false)
-        }
+        val ep = exoPlayer ?: return
+
+        // Recuperar posición del CastPlayer si es posible
+        val position = castPlayer?.currentPosition ?: 0L
+        castPlayer?.stop()
+
+        playerView.player = ep
+        ep.seekTo(position)
+        ep.playWhenReady = true
+
+        currentPlayer = ep
+        viewModel.setCasting(false)
     }
 
     private fun setCurrentPlayer(player: Player) {
-        if (currentPlayer == player) return
-
-        // Guardar posición
-        val playbackPosition = currentPlayer?.currentPosition ?: 0L
-        val playWhenReady = currentPlayer?.playWhenReady ?: true
-
-        currentPlayer?.stop()
         currentPlayer = player
-
         if (player == exoPlayer) {
             playerView.player = player
         }
-
-        player.playWhenReady = playWhenReady
-        player.seekTo(playbackPosition)
-        player.play()
     }
 
     override fun onResume() {
         super.onResume()
         castContext?.addCastStateListener(castStateListener)
-        exoPlayer?.play()
+        if (viewModel.isCasting.value != true) {
+            exoPlayer?.play()
+        }
     }
 
     override fun onPause() {
         super.onPause()
         castContext?.removeCastStateListener(castStateListener)
-        if (!isInPictureInPictureMode) {
+        if (!isInPictureInPictureMode && viewModel.isCasting.value != true) {
             exoPlayer?.pause()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        castContext?.removeCastStateListener(castStateListener)
         castPlayer?.setSessionAvailabilityListener(null)
         castPlayer?.release()
         exoPlayer?.release()
@@ -209,7 +224,6 @@ class PlayerActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Entrar automáticamente en PiP al salir de la app
         enterPipMode()
     }
 
