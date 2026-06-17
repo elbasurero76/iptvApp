@@ -112,6 +112,9 @@ dependencies {
     // WorkManager
     implementation(libs.work.runtime.ktx)
 
+    // Material Components (para temas XML Theme.Material3.*)
+    implementation(libs.material)
+
     // ConstraintLayout (para activity_player.xml)
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
