@@ -35,12 +35,22 @@ jobs:
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false"
 
-      - name: Subir APK
+      - name: Subir APK (artifact)
         uses: actions/upload-artifact@v4
         with:
           name: IPTV-Player-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+
+      - name: Publicar Release con APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-debug
+          name: "IPTV Player - Debug APK"
+          body: "APK de debug generado automáticamente. Instala directamente en tu Android."
+          prerelease: true
+          files: app/build/outputs/apk/debug/app-debug.apk
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Mostrar info APK
         run: |
