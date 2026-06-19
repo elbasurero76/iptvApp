@@ -13,10 +13,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.marcosrava.iptvplayer.data.model.Playlist
+import com.marcosrava.iptvplayer.ui.viewmodel.MARCOS_PLAYLISTS
 import com.marcosrava.iptvplayer.ui.viewmodel.PlaylistsViewModel
+import com.marcosrava.iptvplayer.ui.viewmodel.ServerFile
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -90,11 +93,19 @@ fun PlaylistsScreen(
                 }
             }
 
+            // ── Mis listas del servidor ──────────────────────────────────────
+            MisListasSection(
+                serverUrl = uiState.serverUrl,
+                importingFilename = uiState.importingFilename,
+                importedFilenames = uiState.importedFilenames,
+                onImport = { viewModel.importServerFile(it) }
+            )
+
             // Botón para navegar al explorador Ubuntu
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
                 onClick = onNavigateToBrowser,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
@@ -262,6 +273,123 @@ fun PlaylistCard(
                     contentDescription = "Eliminar",
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun MisListasSection(
+    serverUrl: String,
+    importingFilename: String?,
+    importedFilenames: Set<String>,
+    onImport: (ServerFile) -> Unit
+) {
+    var expanded by remember { mutableStateOf(true) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column {
+            // Cabecera expandible
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Storage, null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Mis listas del servidor",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        if (serverUrl.isBlank()) "Conecta primero al servidor Ubuntu"
+                        else serverUrl,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                )
+            }
+
+            if (expanded) {
+                HorizontalDivider()
+                MARCOS_PLAYLISTS.forEach { sf ->
+                    val isImporting = importingFilename == sf.filename
+                    val isImported = sf.filename in importedFilenames
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = !isImporting && !isImported && serverUrl.isNotBlank()) {
+                                onImport(sf)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.PlaylistPlay, null,
+                            tint = if (isImported) MaterialTheme.colorScheme.primary
+                                   else MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                sf.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                sf.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                        when {
+                            isImporting -> CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp), strokeWidth = 2.dp
+                            )
+                            isImported -> Icon(
+                                Icons.Default.CheckCircle, null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            serverUrl.isBlank() -> Icon(
+                                Icons.Default.Lock, null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            else -> Icon(
+                                Icons.Default.Add, null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        thickness = 0.5.dp
+                    )
+                }
             }
         }
     }
