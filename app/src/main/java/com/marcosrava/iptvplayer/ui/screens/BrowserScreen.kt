@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -33,6 +34,7 @@ fun BrowserScreen(
     var serverInput by remember { mutableStateOf("192.168.1.") }
     var showConnectDialog by remember { mutableStateOf(false) }
     var fileToImport by remember { mutableStateOf<RemoteFile?>(null) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
 
     // Animación de rotación para el icono de escaneo
     val infiniteTransition = rememberInfiniteTransition(label = "scan")
@@ -86,13 +88,61 @@ fun BrowserScreen(
                                 MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    // Botón conectar manual
-                    IconButton(onClick = { showConnectDialog = true }) {
-                        Icon(Icons.Default.Computer, "Conectar manual")
-                    }
                     if (uiState.serverUrl.isNotBlank()) {
+                        // Actualizar
                         IconButton(onClick = { browserViewModel.refresh() }) {
                             Icon(Icons.Default.Refresh, "Actualizar")
+                        }
+                        // Menú overflow: siempre visible cuando hay servidor conectado
+                        Box {
+                            IconButton(onClick = { showOverflowMenu = true }) {
+                                Icon(Icons.Default.MoreVert, "Más opciones")
+                            }
+                            DropdownMenu(
+                                expanded = showOverflowMenu,
+                                onDismissRequest = { showOverflowMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Introducir IP manual") },
+                                    leadingIcon = { Icon(Icons.Default.Computer, null) },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        showConnectDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Buscar en red") },
+                                    leadingIcon = { Icon(Icons.Default.Wifi, null) },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        browserViewModel.discoverServers()
+                                    }
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Desconectar",
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.WifiOff, null,
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    },
+                                    onClick = {
+                                        showOverflowMenu = false
+                                        browserViewModel.disconnect()
+                                    }
+                                )
+                            }
+                        }
+                    } else {
+                        // Sin servidor: solo botón de conectar manual
+                        IconButton(onClick = { showConnectDialog = true }) {
+                            Icon(Icons.Default.Computer, "Conectar manual")
                         }
                     }
                 },
@@ -311,24 +361,58 @@ fun BrowserScreen(
 
                 // ── Lista de archivos ──────────────────────────────────────
                 else -> {
-                    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                        items(uiState.files, key = { it.url }) { file ->
-                            FileListItem(
-                                file = file,
-                                onClick = {
-                                    if (file.isDirectory) {
-                                        browserViewModel.navigateTo(file)
-                                    } else if (file.name.endsWith(".m3u", ignoreCase = true) ||
-                                        file.name.endsWith(".m3u8", ignoreCase = true)
-                                    ) {
-                                        fileToImport = file
+                    if (uiState.files.isEmpty()) {
+                        // Estado vacío: servidor OK pero carpeta sin archivos
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen, contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "La carpeta está vacía",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Asegúrate de que hay archivos .m3u en la\ncarpeta donde lanzaste el servidor.",
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                            Spacer(Modifier.height(24.dp))
+                            OutlinedButton(onClick = { browserViewModel.refresh() }) {
+                                Icon(Icons.Default.Refresh, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Recargar")
+                            }
+                        }
+                    } else {
+                        LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+                            items(uiState.files, key = { it.url }) { file ->
+                                FileListItem(
+                                    file = file,
+                                    onClick = {
+                                        if (file.isDirectory) {
+                                            browserViewModel.navigateTo(file)
+                                        } else if (file.name.endsWith(".m3u", ignoreCase = true) ||
+                                            file.name.endsWith(".m3u8", ignoreCase = true)
+                                        ) {
+                                            fileToImport = file
+                                        }
                                     }
-                                }
-                            )
-                            HorizontalDivider(
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                thickness = 0.5.dp
-                            )
+                                )
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                    thickness = 0.5.dp
+                                )
+                            }
                         }
                     }
                 }

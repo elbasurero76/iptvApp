@@ -79,10 +79,13 @@ class BrowserViewModel @Inject constructor(
         loadDirectory(normalizedUrl)
     }
 
-    /** Escanea la red local buscando servidores HTTP en el puerto indicado */
+    /** Escanea la red local buscando servidores HTTP en el puerto indicado.
+     *  Si hay un servidor ya conectado, desconecta primero para mostrar los resultados. */
     fun discoverServers(port: Int = DEFAULT_PORT) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isDiscovering = true, discoveredServers = emptyList(), error = null) }
+            // Limpiar servidor actual para que el estado de resultados se muestre correctamente
+            dataStore.edit { it.remove(KEY_SERVER_URL) }
+            _uiState.update { it.copy(isDiscovering = true, discoveredServers = emptyList(), error = null, serverUrl = "", currentPath = "", files = emptyList()) }
 
             val localIp = withContext(Dispatchers.IO) { getLocalIpAddress() }
             if (localIp == null) {
