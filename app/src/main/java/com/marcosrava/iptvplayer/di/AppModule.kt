@@ -1,6 +1,9 @@
 package com.marcosrava.iptvplayer.di
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.marcosrava.iptvplayer.data.local.AppDatabase
 import com.marcosrava.iptvplayer.data.local.ChannelDao
@@ -15,6 +18,8 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "iptv_settings")
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -51,4 +56,9 @@ object AppModule {
 
     @Provides
     fun provideEpgDao(db: AppDatabase): EpgDao = db.epgDao()
+
+    @Provides
+    @Singleton
+    fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
+        context.dataStore
 }

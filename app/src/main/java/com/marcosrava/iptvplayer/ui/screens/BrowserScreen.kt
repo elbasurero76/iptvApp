@@ -1,5 +1,6 @@
 package com.marcosrava.iptvplayer.ui.screens
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,25 +31,29 @@ fun BrowserScreen(
 ) {
     val uiState by browserViewModel.uiState.collectAsState()
     var serverInput by remember { mutableStateOf("192.168.1.") }
-    var showConnectDialog by remember { mutableStateOf(uiState.serverUrl.isBlank()) }
+    var showConnectDialog by remember { mutableStateOf(false) }
     var fileToImport by remember { mutableStateOf<RemoteFile?>(null) }
+
+    // Animación de rotación para el icono de escaneo
+    val infiniteTransition = rememberInfiniteTransition(label = "scan")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing)),
+        label = "rotation"
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            "Servidor Ubuntu",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Text("Servidor de listas", style = MaterialTheme.typography.titleMedium)
                         if (uiState.serverUrl.isNotBlank()) {
                             Text(
                                 uiState.serverUrl,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -55,20 +61,39 @@ fun BrowserScreen(
                 navigationIcon = {
                     if (browserViewModel.canNavigateUp()) {
                         IconButton(onClick = { browserViewModel.navigateUp() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Atrás")
+                            Icon(Icons.Default.ArrowBack, "Atrás")
                         }
                     } else {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                            Icon(Icons.Default.Close, "Cerrar")
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showConnectDialog = true }) {
-                        Icon(Icons.Default.Computer, contentDescription = "Conectar")
+                    // Botón buscar en red
+                    IconButton(
+                        onClick = { browserViewModel.discoverServers() },
+                        enabled = !uiState.isDiscovering
+                    ) {
+                        Icon(
+                            Icons.Default.Wifi,
+                            contentDescription = "Buscar en red",
+                            modifier = if (uiState.isDiscovering)
+                                Modifier.rotate(rotation) else Modifier,
+                            tint = if (uiState.isDiscovering)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurface
+                        )
                     }
-                    IconButton(onClick = { browserViewModel.refresh() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Actualizar")
+                    // Botón conectar manual
+                    IconButton(onClick = { showConnectDialog = true }) {
+                        Icon(Icons.Default.Computer, "Conectar manual")
+                    }
+                    if (uiState.serverUrl.isNotBlank()) {
+                        IconButton(onClick = { browserViewModel.refresh() }) {
+                            Icon(Icons.Default.Refresh, "Actualizar")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -84,88 +109,181 @@ fun BrowserScreen(
                 .padding(padding)
         ) {
             when {
-                uiState.serverUrl.isBlank() -> {
-                    // Pantalla inicial de instrucciones
+                // ── Escaneando la red ──────────────────────────────────────
+                uiState.isDiscovering -> {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(56.dp))
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            "Buscando servidores en la red…",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            "Esto puede tardar 30-60 segundos",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                        if (uiState.discoveredServers.isNotEmpty()) {
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "Encontrados: ${uiState.discoveredServers.size}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                // ── Servidores encontrados (escaneo terminado) ────────────
+                uiState.discoveredServers.isNotEmpty() && uiState.serverUrl.isBlank() -> {
+                    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                        Text(
+                            "Servidores encontrados",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        uiState.discoveredServers.forEach { server ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clickable { browserViewModel.connectToServer(server) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Computer,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(server, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "Toca para conectar",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    Icon(Icons.Default.ChevronRight, contentDescription = null)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Sin servidor configurado ───────────────────────────────
+                uiState.serverUrl.isBlank() -> {
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            Icons.Default.Computer,
+                            Icons.Default.Wifi,
                             contentDescription = null,
                             modifier = Modifier.size(72.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.height(24.dp))
                         Text(
-                            "Conecta con tu Ubuntu",
+                            "Conecta con tu servidor de listas",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(Modifier.height(16.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text("En tu Ubuntu, ejecuta:", style = MaterialTheme.typography.labelMedium)
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "cd /ruta/a/tus/listas\npython3 -m http.server 8080",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier
-                                        .background(
-                                            MaterialTheme.colorScheme.surfaceVariant,
-                                            RoundedCornerShape(8.dp)
-                                        )
-                                        .padding(12.dp)
-                                        .fillMaxWidth()
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "En tu Ubuntu, ejecuta:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "python3 -m http.server 8080",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(8.dp)
                                 )
-                                Spacer(Modifier.height(8.dp))
+                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                        Spacer(Modifier.height(32.dp))
+
+                        // Botón principal: buscar automático
+                        Button(
+                            onClick = { browserViewModel.discoverServers() },
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                        ) {
+                            Icon(Icons.Default.Wifi, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Buscar servidor automáticamente", style = MaterialTheme.typography.titleSmall)
+                        }
+                        Spacer(Modifier.height(12.dp))
+
+                        // Botón secundario: introducir IP manual
+                        OutlinedButton(
+                            onClick = { showConnectDialog = true },
+                            modifier = Modifier.fillMaxWidth().height(48.dp)
+                        ) {
+                            Icon(Icons.Default.Computer, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Introducir IP manualmente")
+                        }
+
+                        // Error si no se encontró nada
+                        uiState.error?.let { err ->
+                            Spacer(Modifier.height(16.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer
+                                )
+                            ) {
                                 Text(
-                                    "Luego introduce la IP de tu Ubuntu (ej: 192.168.1.X:8080)",
+                                    err,
+                                    modifier = Modifier.padding(12.dp),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                             }
-                        }
-                        Spacer(Modifier.height(24.dp))
-                        Button(
-                            onClick = { showConnectDialog = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Link, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Conectar a Ubuntu")
                         }
                     }
                 }
 
+                // ── Cargando archivos ──────────────────────────────────────
                 uiState.isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(Modifier.height(16.dp))
-                            Text("Cargando archivos...")
+                            Text("Cargando archivos…")
                         }
                     }
                 }
 
+                // ── Error de conexión ──────────────────────────────────────
                 uiState.error != null -> {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
+                        modifier = Modifier.fillMaxSize().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            Icons.Default.WifiOff,
-                            contentDescription = null,
+                            Icons.Default.WifiOff, contentDescription = null,
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.error
                         )
@@ -176,16 +294,24 @@ fun BrowserScreen(
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(Modifier.height(16.dp))
-                        Button(onClick = { showConnectDialog = true }) {
-                            Text("Reconectar")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { browserViewModel.refresh() }) {
+                                Text("Reintentar")
+                            }
+                            OutlinedButton(onClick = { browserViewModel.discoverServers() }) {
+                                Text("Buscar en red")
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { browserViewModel.disconnect() }) {
+                            Text("Desconectar")
                         }
                     }
                 }
 
+                // ── Lista de archivos ──────────────────────────────────────
                 else -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
+                    LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
                         items(uiState.files, key = { it.url }) { file ->
                             FileListItem(
                                 file = file,
@@ -193,7 +319,8 @@ fun BrowserScreen(
                                     if (file.isDirectory) {
                                         browserViewModel.navigateTo(file)
                                     } else if (file.name.endsWith(".m3u", ignoreCase = true) ||
-                                        file.name.endsWith(".m3u8", ignoreCase = true)) {
+                                        file.name.endsWith(".m3u8", ignoreCase = true)
+                                    ) {
                                         fileToImport = file
                                     }
                                 }
@@ -209,17 +336,15 @@ fun BrowserScreen(
         }
     }
 
-    // Diálogo conectar
+    // ── Diálogo conectar manual ────────────────────────────────────────────
     if (showConnectDialog) {
         AlertDialog(
-            onDismissRequest = {
-                if (uiState.serverUrl.isNotBlank()) showConnectDialog = false
-            },
+            onDismissRequest = { showConnectDialog = false },
             title = { Text("Conectar al servidor") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Introduce la IP:puerto de tu Ubuntu",
+                        "Introduce la IP:puerto de tu servidor\n(ej: 192.168.1.100:8080)",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -243,30 +368,26 @@ fun BrowserScreen(
                 ) { Text("Conectar") }
             },
             dismissButton = {
-                if (uiState.serverUrl.isNotBlank()) {
-                    TextButton(onClick = { showConnectDialog = false }) { Text("Cancelar") }
-                }
+                TextButton(onClick = { showConnectDialog = false }) { Text("Cancelar") }
             }
         )
     }
 
-    // Diálogo importar archivo M3U
+    // ── Diálogo importar M3U ───────────────────────────────────────────────
     fileToImport?.let { file ->
         AlertDialog(
             onDismissRequest = { fileToImport = null },
             title = { Text("Importar lista M3U") },
             text = { Text("¿Añadir \"${file.name}\" a tus playlists?") },
             confirmButton = {
-                Button(
-                    onClick = {
-                        playlistsViewModel.addUbuntuPlaylist(
-                            file.name.substringBeforeLast("."),
-                            file.url
-                        )
-                        fileToImport = null
-                        onBack()
-                    }
-                ) { Text("Importar") }
+                Button(onClick = {
+                    playlistsViewModel.addUbuntuPlaylist(
+                        file.name.substringBeforeLast("."),
+                        file.url
+                    )
+                    fileToImport = null
+                    onBack()
+                }) { Text("Importar") }
             },
             dismissButton = {
                 TextButton(onClick = { fileToImport = null }) { Text("Cancelar") }
@@ -276,10 +397,7 @@ fun BrowserScreen(
 }
 
 @Composable
-fun FileListItem(
-    file: RemoteFile,
-    onClick: () -> Unit
-) {
+fun FileListItem(file: RemoteFile, onClick: () -> Unit) {
     val isM3U = file.name.endsWith(".m3u", ignoreCase = true) ||
             file.name.endsWith(".m3u8", ignoreCase = true)
 
@@ -287,7 +405,7 @@ fun FileListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -310,9 +428,8 @@ fun FileListItem(
             Text(
                 text = file.name,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (file.isDirectory) FontWeight.Medium else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontWeight = if (file.isDirectory || isM3U) FontWeight.Medium else FontWeight.Normal,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
             )
             if (isM3U) {
                 Text(
@@ -324,8 +441,7 @@ fun FileListItem(
         }
         if (file.isDirectory) {
             Icon(
-                Icons.Default.ChevronRight,
-                contentDescription = null,
+                Icons.Default.ChevronRight, contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
             )
         }
