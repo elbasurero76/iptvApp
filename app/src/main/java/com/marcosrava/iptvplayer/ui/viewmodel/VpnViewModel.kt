@@ -16,6 +16,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,6 +59,8 @@ class VpnViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(VpnUiState())
     val uiState: StateFlow<VpnUiState> = _uiState.asStateFlow()
 
+    private var connectTimeoutJob: Job? = null
+
     private val vpnManager: VpnManager? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             context.getSystemService(VpnManager::class.java)
@@ -88,6 +92,34 @@ class VpnViewModel @Inject constructor(
 
     fun clearError() = _uiState.update { it.copy(error = null) }
 
+    /** Cancela intento de conexión en curso */
+    fun cancelConnect() {
+        connectTimeoutJob?.cancel()
+        connectTimeoutJob = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try { vpnManager?.stopProvisionedVpnProfile() } catch (_: Exception) {}
+        }
+        _uiState.update { it.copy(status = VpnStatus.DISCONNECTED, error = null, approvalPending = false) }
+    }
+
+    private fun startConnectionTimeout() {
+        connectTimeoutJob?.cancel()
+        connectTimeoutJob = viewModelScope.launch {
+            delay(25_000) // 25 segundos máximo
+            if (_uiState.value.status == VpnStatus.CONNECTING) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try { vpnManager?.stopProvisionedVpnProfile() } catch (_: Exception) {}
+                }
+                _uiState.update {
+                    it.copy(
+                        status = VpnStatus.ERROR,
+                        error = "Tiempo de espera agotado.\nVerifica usuario/contraseña de PIA."
+                    )
+                }
+            }
+        }
+    }
+
     /**
      * Conecta al país seleccionado.
      * Devuelve un Intent si el sistema necesita aprobación del usuario (primera vez).
@@ -106,17 +138,16 @@ class VpnViewModel @Inject constructor(
 
         return try {
             val profile = android.net.Ikev2VpnProfile.Builder(country.host, country.host)
-                .setAuthUsernamePassword(username, password, null) // null = usar CAs del sistema
+                .setAuthUsernamePassword(username, password, null)
                 .build()
 
             val approvalIntent = vpnManager?.provisionVpnProfile(profile)
 
             if (approvalIntent == null) {
-                // Ya aprobado por el usuario anteriormente — conectar directamente
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     vpnManager?.startProvisionedVpnProfileSession()
+                    startConnectionTimeout()
                 } else {
-                    // API 31-32: perfil instalado, pero el usuario debe conectar desde ajustes
                     _uiState.update {
                         it.copy(
                             status = VpnStatus.DISCONNECTED,
@@ -127,15 +158,15 @@ class VpnViewModel @Inject constructor(
                 }
                 null
             } else {
-                // Primera vez: el sistema pide aprobación al usuario
                 _uiState.update { it.copy(status = VpnStatus.DISCONNECTED, approvalPending = true) }
                 approvalIntent
             }
         } catch (e: Exception) {
+            connectTimeoutJob?.cancel()
             _uiState.update {
                 it.copy(
                     status = VpnStatus.ERROR,
-                    error = "Error al conectar: ${e.message}\n\nComprueba usuario/contraseña de PIA."
+                    error = "Error al conectar: ${e.message}"
                 )
             }
             null
@@ -148,17 +179,21 @@ class VpnViewModel @Inject constructor(
         _uiState.update { it.copy(approvalPending = false, status = VpnStatus.CONNECTING) }
         try {
             vpnManager?.startProvisionedVpnProfileSession()
+            startConnectionTimeout()
         } catch (e: Exception) {
+            connectTimeoutJob?.cancel()
             _uiState.update { it.copy(status = VpnStatus.ERROR, error = e.message) }
         }
     }
 
     fun onApprovalDenied() {
+        connectTimeoutJob?.cancel()
         _uiState.update { it.copy(approvalPending = false, status = VpnStatus.DISCONNECTED) }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
     fun disconnect() {
+        connectTimeoutJob?.cancel()
         try {
             vpnManager?.stopProvisionedVpnProfile()
             _uiState.update { it.copy(status = VpnStatus.DISCONNECTED, error = null) }
@@ -175,6 +210,8 @@ class VpnViewModel @Inject constructor(
             .build()
         cm.registerNetworkCallback(request, object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
+                connectTimeoutJob?.cancel()
+                connectTimeoutJob = null
                 _uiState.update { it.copy(status = VpnStatus.CONNECTED, error = null) }
             }
             override fun onLost(network: Network) {

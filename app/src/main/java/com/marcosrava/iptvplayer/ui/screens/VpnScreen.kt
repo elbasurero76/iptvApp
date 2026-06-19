@@ -154,13 +154,12 @@ fun VpnScreen(
                 }
                 VpnStatus.CONNECTING -> {
                     OutlinedButton(
-                        onClick = { /* esperar */ },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        enabled = false
+                        onClick = { viewModel.cancelConnect() },
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
-                        Text("Conectando…")
+                        Text("Conectando… (toca para cancelar)")
                     }
                 }
                 VpnStatus.CONNECTED -> {

@@ -327,7 +327,14 @@ fun BrowserScreen(
 
                 // ── Lista de archivos ────────────────────────────────────────
                 else -> {
-                    if (uiState.files.isEmpty()) {
+                    // Sólo mostrar carpetas y archivos .m3u/.m3u8
+                    val visibleFiles = uiState.files.filter { f ->
+                        f.isDirectory ||
+                        f.name.endsWith(".m3u", ignoreCase = true) ||
+                        f.name.endsWith(".m3u8", ignoreCase = true)
+                    }
+
+                    if (visibleFiles.isEmpty()) {
                         Column(
                             modifier = Modifier.fillMaxSize().padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -340,7 +347,7 @@ fun BrowserScreen(
                             )
                             Spacer(Modifier.height(16.dp))
                             Text(
-                                "La carpeta está vacía",
+                                "No hay listas M3U aquí",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
@@ -360,7 +367,7 @@ fun BrowserScreen(
                         }
                     } else {
                         LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                            items(uiState.files, key = { it.url }) { file ->
+                            items(visibleFiles, key = { it.url }) { file ->
                                 FileListItem(
                                     file = file,
                                     isImporting = uiState.importingUrl == file.url,
@@ -426,82 +433,77 @@ fun FileListItem(
     val isM3U = file.name.endsWith(".m3u", ignoreCase = true) ||
             file.name.endsWith(".m3u8", ignoreCase = true)
 
+    val bgColor = when {
+        isImported -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+        isImporting -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.background
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .then(
-                if (file.isDirectory) Modifier.clickable(onClick = onDirClick)
-                else Modifier
-            )
+            .background(bgColor)
+            .clickable(enabled = !isImporting) {
+                if (file.isDirectory) onDirClick() else onImportClick()
+            }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Icono tipo de archivo
+        // Icono
         Icon(
-            imageVector = when {
-                file.isDirectory -> Icons.Default.Folder
-                isM3U -> Icons.Default.PlaylistPlay
-                file.name.endsWith(".xml", ignoreCase = true) -> Icons.Default.Description
-                else -> Icons.Default.InsertDriveFile
-            },
+            imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.PlaylistPlay,
             contentDescription = null,
-            tint = when {
-                file.isDirectory -> MaterialTheme.colorScheme.primary
-                isM3U -> MaterialTheme.colorScheme.secondary
-                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-            },
+            tint = if (file.isDirectory) MaterialTheme.colorScheme.primary
+                   else MaterialTheme.colorScheme.secondary,
             modifier = Modifier.size(32.dp)
         )
         Spacer(Modifier.width(16.dp))
 
-        // Nombre
+        // Nombre + subtítulo
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = file.name,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (file.isDirectory || isM3U) FontWeight.Medium else FontWeight.Normal,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (isImported) {
-                Text(
-                    "✓ Añadida",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+            Text(
+                text = when {
+                    isImported -> "✓ Añadida a Listas"
+                    isImporting -> "Importando…"
+                    file.isDirectory -> "Carpeta — toca para abrir"
+                    else -> "Toca para importar"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = when {
+                    isImported -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                }
+            )
         }
 
         Spacer(Modifier.width(8.dp))
 
-        // Acción derecha
+        // Indicador derecho
         when {
             file.isDirectory -> Icon(
                 Icons.Default.ChevronRight, null,
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
             )
-            isM3U -> {
-                if (isImporting) {
-                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
-                } else if (isImported) {
-                    Icon(
-                        Icons.Default.CheckCircle, null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(28.dp)
-                    )
-                } else {
-                    // Botón importar visible y clicable
-                    FilledTonalButton(
-                        onClick = onImportClick,
-                        modifier = Modifier.height(36.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp)
-                    ) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Importar", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
+            isImporting -> CircularProgressIndicator(
+                modifier = Modifier.size(24.dp), strokeWidth = 2.dp
+            )
+            isImported -> Icon(
+                Icons.Default.CheckCircle, null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp)
+            )
+            else -> Icon(
+                Icons.Default.Add, null,
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
