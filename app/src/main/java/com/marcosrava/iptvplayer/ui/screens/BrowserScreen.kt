@@ -21,20 +21,34 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.marcosrava.iptvplayer.data.model.RemoteFile
 import com.marcosrava.iptvplayer.ui.viewmodel.BrowserViewModel
-import com.marcosrava.iptvplayer.ui.viewmodel.PlaylistsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(
     onBack: () -> Unit,
-    browserViewModel: BrowserViewModel = hiltViewModel(),
-    playlistsViewModel: PlaylistsViewModel = hiltViewModel()
+    browserViewModel: BrowserViewModel = hiltViewModel()
 ) {
     val uiState by browserViewModel.uiState.collectAsState()
     var serverInput by remember { mutableStateOf("192.168.1.") }
     var showConnectDialog by remember { mutableStateOf(false) }
-    var fileToImport by remember { mutableStateOf<RemoteFile?>(null) }
     var showOverflowMenu by remember { mutableStateOf(false) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // Mostrar Snackbar cuando hay mensaje de import
+    LaunchedEffect(uiState.importMessage) {
+        uiState.importMessage?.let { msg ->
+            scope.launch {
+                snackbarHostState.showSnackbar(
+                    message = msg,
+                    duration = SnackbarDuration.Short
+                )
+            }
+            browserViewModel.clearImportMessage()
+        }
+    }
 
     // Animación de rotación para el icono de escaneo
     val infiniteTransition = rememberInfiniteTransition(label = "scan")
@@ -45,6 +59,7 @@ fun BrowserScreen(
     )
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -72,7 +87,7 @@ fun BrowserScreen(
                     }
                 },
                 actions = {
-                    // Botón buscar en red
+                    // Buscar en red
                     IconButton(
                         onClick = { browserViewModel.discoverServers() },
                         enabled = !uiState.isDiscovering
@@ -80,20 +95,15 @@ fun BrowserScreen(
                         Icon(
                             Icons.Default.Wifi,
                             contentDescription = "Buscar en red",
-                            modifier = if (uiState.isDiscovering)
-                                Modifier.rotate(rotation) else Modifier,
-                            tint = if (uiState.isDiscovering)
-                                MaterialTheme.colorScheme.primary
-                            else
-                                MaterialTheme.colorScheme.onSurface
+                            modifier = if (uiState.isDiscovering) Modifier.rotate(rotation) else Modifier,
+                            tint = if (uiState.isDiscovering) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface
                         )
                     }
                     if (uiState.serverUrl.isNotBlank()) {
-                        // Actualizar
                         IconButton(onClick = { browserViewModel.refresh() }) {
                             Icon(Icons.Default.Refresh, "Actualizar")
                         }
-                        // Menú overflow: siempre visible cuando hay servidor conectado
                         Box {
                             IconButton(onClick = { showOverflowMenu = true }) {
                                 Icon(Icons.Default.MoreVert, "Más opciones")
@@ -105,50 +115,30 @@ fun BrowserScreen(
                                 DropdownMenuItem(
                                     text = { Text("Introducir IP manual") },
                                     leadingIcon = { Icon(Icons.Default.Computer, null) },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        showConnectDialog = true
-                                    }
+                                    onClick = { showOverflowMenu = false; showConnectDialog = true }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Buscar en red") },
                                     leadingIcon = { Icon(Icons.Default.Wifi, null) },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        browserViewModel.discoverServers()
-                                    }
+                                    onClick = { showOverflowMenu = false; browserViewModel.discoverServers() }
                                 )
                                 HorizontalDivider()
                                 DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            "Desconectar",
-                                            color = MaterialTheme.colorScheme.error
-                                        )
-                                    },
+                                    text = { Text("Desconectar", color = MaterialTheme.colorScheme.error) },
                                     leadingIcon = {
-                                        Icon(
-                                            Icons.Default.WifiOff, null,
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
+                                        Icon(Icons.Default.WifiOff, null, tint = MaterialTheme.colorScheme.error)
                                     },
-                                    onClick = {
-                                        showOverflowMenu = false
-                                        browserViewModel.disconnect()
-                                    }
+                                    onClick = { showOverflowMenu = false; browserViewModel.disconnect() }
                                 )
                             }
                         }
                     } else {
-                        // Sin servidor: solo botón de conectar manual
                         IconButton(onClick = { showConnectDialog = true }) {
                             Icon(Icons.Default.Computer, "Conectar manual")
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
         }
     ) { padding ->
@@ -159,7 +149,7 @@ fun BrowserScreen(
                 .padding(padding)
         ) {
             when {
-                // ── Escaneando la red ──────────────────────────────────────
+                // ── Escaneando la red ────────────────────────────────────────
                 uiState.isDiscovering -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -168,10 +158,7 @@ fun BrowserScreen(
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(56.dp))
                         Spacer(Modifier.height(20.dp))
-                        Text(
-                            "Buscando servidores en la red…",
-                            style = MaterialTheme.typography.titleMedium
-                        )
+                        Text("Buscando servidores en la red…", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "Esto puede tardar 30-60 segundos",
                             style = MaterialTheme.typography.bodySmall,
@@ -188,7 +175,7 @@ fun BrowserScreen(
                     }
                 }
 
-                // ── Servidores encontrados (escaneo terminado) ────────────
+                // ── Servidores encontrados ───────────────────────────────────
                 uiState.discoveredServers.isNotEmpty() && uiState.serverUrl.isBlank() -> {
                     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                         Text(
@@ -212,8 +199,7 @@ fun BrowserScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        Icons.Default.Computer,
-                                        contentDescription = null,
+                                        Icons.Default.Computer, null,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(32.dp)
                                     )
@@ -226,14 +212,14 @@ fun BrowserScreen(
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         )
                                     }
-                                    Icon(Icons.Default.ChevronRight, contentDescription = null)
+                                    Icon(Icons.Default.ChevronRight, null)
                                 }
                             }
                         }
                     }
                 }
 
-                // ── Sin servidor configurado ───────────────────────────────
+                // ── Sin servidor configurado ─────────────────────────────────
                 uiState.serverUrl.isBlank() -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -241,8 +227,7 @@ fun BrowserScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            Icons.Default.Wifi,
-                            contentDescription = null,
+                            Icons.Default.Wifi, null,
                             modifier = Modifier.size(72.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -260,52 +245,38 @@ fun BrowserScreen(
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "python3 -m http.server 8080",
+                            "bash iptv-server.sh",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
                             ),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant,
-                                    RoundedCornerShape(8.dp)
-                                )
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
                                 .padding(horizontal = 16.dp, vertical = 10.dp)
                         )
                         Spacer(Modifier.height(32.dp))
-
-                        // Botón principal: buscar automático
                         Button(
                             onClick = { browserViewModel.discoverServers() },
                             modifier = Modifier.fillMaxWidth().height(56.dp)
                         ) {
-                            Icon(Icons.Default.Wifi, contentDescription = null)
+                            Icon(Icons.Default.Wifi, null)
                             Spacer(Modifier.width(8.dp))
                             Text("Buscar servidor automáticamente", style = MaterialTheme.typography.titleSmall)
                         }
                         Spacer(Modifier.height(12.dp))
-
-                        // Botón secundario: introducir IP manual
                         OutlinedButton(
                             onClick = { showConnectDialog = true },
                             modifier = Modifier.fillMaxWidth().height(48.dp)
                         ) {
-                            Icon(Icons.Default.Computer, contentDescription = null)
+                            Icon(Icons.Default.Computer, null)
                             Spacer(Modifier.width(8.dp))
                             Text("Introducir IP manualmente")
                         }
-
-                        // Error si no se encontró nada
                         uiState.error?.let { err ->
                             Spacer(Modifier.height(16.dp))
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer
-                                )
-                            ) {
+                            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                                 Text(
-                                    err,
-                                    modifier = Modifier.padding(12.dp),
+                                    err, modifier = Modifier.padding(12.dp),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
@@ -314,7 +285,7 @@ fun BrowserScreen(
                     }
                 }
 
-                // ── Cargando archivos ──────────────────────────────────────
+                // ── Cargando archivos ────────────────────────────────────────
                 uiState.isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -325,7 +296,7 @@ fun BrowserScreen(
                     }
                 }
 
-                // ── Error de conexión ──────────────────────────────────────
+                // ── Error de conexión ────────────────────────────────────────
                 uiState.error != null -> {
                     Column(
                         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -333,7 +304,7 @@ fun BrowserScreen(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Icon(
-                            Icons.Default.WifiOff, contentDescription = null,
+                            Icons.Default.WifiOff, null,
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.error
                         )
@@ -341,35 +312,29 @@ fun BrowserScreen(
                         Text(
                             uiState.error ?: "Error de conexión",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
                         )
                         Spacer(Modifier.height(16.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { browserViewModel.refresh() }) {
-                                Text("Reintentar")
-                            }
-                            OutlinedButton(onClick = { browserViewModel.discoverServers() }) {
-                                Text("Buscar en red")
-                            }
+                            Button(onClick = { browserViewModel.refresh() }) { Text("Reintentar") }
+                            OutlinedButton(onClick = { browserViewModel.discoverServers() }) { Text("Buscar en red") }
                         }
                         Spacer(Modifier.height(8.dp))
-                        TextButton(onClick = { browserViewModel.disconnect() }) {
-                            Text("Desconectar")
-                        }
+                        TextButton(onClick = { browserViewModel.disconnect() }) { Text("Desconectar") }
                     }
                 }
 
-                // ── Lista de archivos ──────────────────────────────────────
+                // ── Lista de archivos ────────────────────────────────────────
                 else -> {
                     if (uiState.files.isEmpty()) {
-                        // Estado vacío: servidor OK pero carpeta sin archivos
                         Column(
                             modifier = Modifier.fillMaxSize().padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
                             Icon(
-                                Icons.Default.FolderOpen, contentDescription = null,
+                                Icons.Default.FolderOpen, null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                             )
@@ -398,15 +363,10 @@ fun BrowserScreen(
                             items(uiState.files, key = { it.url }) { file ->
                                 FileListItem(
                                     file = file,
-                                    onClick = {
-                                        if (file.isDirectory) {
-                                            browserViewModel.navigateTo(file)
-                                        } else if (file.name.endsWith(".m3u", ignoreCase = true) ||
-                                            file.name.endsWith(".m3u8", ignoreCase = true)
-                                        ) {
-                                            fileToImport = file
-                                        }
-                                    }
+                                    isImporting = uiState.importingUrl == file.url,
+                                    isImported = file.url in uiState.importedUrls,
+                                    onDirClick = { browserViewModel.navigateTo(file) },
+                                    onImportClick = { browserViewModel.importPlaylist(file) }
                                 )
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -420,7 +380,7 @@ fun BrowserScreen(
         }
     }
 
-    // ── Diálogo conectar manual ────────────────────────────────────────────
+    // ── Diálogo conectar manual ─────────────────────────────────────────────
     if (showConnectDialog) {
         AlertDialog(
             onDismissRequest = { showConnectDialog = false },
@@ -444,10 +404,7 @@ fun BrowserScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = {
-                        browserViewModel.connectToServer(serverInput)
-                        showConnectDialog = false
-                    },
+                    onClick = { browserViewModel.connectToServer(serverInput); showConnectDialog = false },
                     enabled = serverInput.isNotBlank()
                 ) { Text("Conectar") }
             },
@@ -456,42 +413,30 @@ fun BrowserScreen(
             }
         )
     }
-
-    // ── Diálogo importar M3U ───────────────────────────────────────────────
-    fileToImport?.let { file ->
-        AlertDialog(
-            onDismissRequest = { fileToImport = null },
-            title = { Text("Importar lista M3U") },
-            text = { Text("¿Añadir \"${file.name}\" a tus playlists?") },
-            confirmButton = {
-                Button(onClick = {
-                    playlistsViewModel.addUbuntuPlaylist(
-                        file.name.substringBeforeLast("."),
-                        file.url
-                    )
-                    fileToImport = null
-                    onBack()
-                }) { Text("Importar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { fileToImport = null }) { Text("Cancelar") }
-            }
-        )
-    }
 }
 
 @Composable
-fun FileListItem(file: RemoteFile, onClick: () -> Unit) {
+fun FileListItem(
+    file: RemoteFile,
+    isImporting: Boolean,
+    isImported: Boolean,
+    onDirClick: () -> Unit,
+    onImportClick: () -> Unit
+) {
     val isM3U = file.name.endsWith(".m3u", ignoreCase = true) ||
             file.name.endsWith(".m3u8", ignoreCase = true)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(
+                if (file.isDirectory) Modifier.clickable(onClick = onDirClick)
+                else Modifier
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Icono tipo de archivo
         Icon(
             imageVector = when {
                 file.isDirectory -> Icons.Default.Folder
@@ -503,31 +448,60 @@ fun FileListItem(file: RemoteFile, onClick: () -> Unit) {
             tint = when {
                 file.isDirectory -> MaterialTheme.colorScheme.primary
                 isM3U -> MaterialTheme.colorScheme.secondary
-                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
             },
             modifier = Modifier.size(32.dp)
         )
         Spacer(Modifier.width(16.dp))
+
+        // Nombre
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = file.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (file.isDirectory || isM3U) FontWeight.Medium else FontWeight.Normal,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            if (isM3U) {
+            if (isImported) {
                 Text(
-                    "Toca para importar",
+                    "✓ Añadida",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }
-        if (file.isDirectory) {
-            Icon(
-                Icons.Default.ChevronRight, contentDescription = null,
+
+        Spacer(Modifier.width(8.dp))
+
+        // Acción derecha
+        when {
+            file.isDirectory -> Icon(
+                Icons.Default.ChevronRight, null,
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
             )
+            isM3U -> {
+                if (isImporting) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+                } else if (isImported) {
+                    Icon(
+                        Icons.Default.CheckCircle, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                } else {
+                    // Botón importar visible y clicable
+                    FilledTonalButton(
+                        onClick = onImportClick,
+                        modifier = Modifier.height(36.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Importar", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
         }
     }
 }

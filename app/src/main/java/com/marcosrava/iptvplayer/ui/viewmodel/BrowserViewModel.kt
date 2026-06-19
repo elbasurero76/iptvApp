@@ -7,7 +7,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.marcosrava.iptvplayer.data.model.Playlist
+import com.marcosrava.iptvplayer.data.model.PlaylistSource
 import com.marcosrava.iptvplayer.data.model.RemoteFile
+import com.marcosrava.iptvplayer.data.repository.PlaylistRepository
 import com.marcosrava.iptvplayer.network.HttpFileBrowser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,13 +33,18 @@ data class BrowserUiState(
     val isDiscovering: Boolean = false,
     val discoveredServers: List<String> = emptyList(),
     val error: String? = null,
-    val navigationStack: List<String> = emptyList()
+    val navigationStack: List<String> = emptyList(),
+    // Estado del import
+    val importingUrl: String? = null,       // URL que se está importando ahora mismo
+    val importedUrls: Set<String> = emptySet(),  // URLs ya importadas con éxito
+    val importMessage: String? = null        // Mensaje para Snackbar
 )
 
 @HiltViewModel
 class BrowserViewModel @Inject constructor(
     private val browser: HttpFileBrowser,
     private val dataStore: DataStore<Preferences>,
+    private val repository: PlaylistRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -184,6 +192,55 @@ class BrowserViewModel @Inject constructor(
     fun refresh() = loadDirectory(_uiState.value.currentPath)
 
     fun clearError() = _uiState.update { it.copy(error = null) }
+
+    fun clearImportMessage() = _uiState.update { it.copy(importMessage = null) }
+
+    /** Descarga e importa un archivo .m3u directamente desde el servidor */
+    fun importPlaylist(file: RemoteFile) {
+        val url = file.url
+        if (_uiState.value.importingUrl == url) return  // ya en progreso
+        viewModelScope.launch {
+            _uiState.update { it.copy(importingUrl = url, importMessage = null) }
+            try {
+                val name = file.name
+                    .substringBeforeLast(".")
+                    .ifBlank { file.name }
+                val playlist = Playlist(
+                    name = name,
+                    url = url,
+                    source = PlaylistSource.UBUNTU
+                )
+                val id = repository.addPlaylist(playlist)
+                val result = repository.refreshPlaylist(playlist.copy(id = id))
+                result.fold(
+                    onSuccess = { count ->
+                        _uiState.update {
+                            it.copy(
+                                importingUrl = null,
+                                importedUrls = it.importedUrls + url,
+                                importMessage = "✓ \"$name\" añadida — $count canales"
+                            )
+                        }
+                    },
+                    onFailure = { err ->
+                        _uiState.update {
+                            it.copy(
+                                importingUrl = null,
+                                importMessage = "Error al importar \"$name\": ${err.message}"
+                            )
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        importingUrl = null,
+                        importMessage = "Error: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
 
     fun disconnect() {
         viewModelScope.launch {
