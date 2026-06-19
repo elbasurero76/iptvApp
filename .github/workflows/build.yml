@@ -44,13 +44,24 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
+      - name: Borrar release y tag anteriores (para poder sobreescribir)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest-debug --yes --repo ${{ github.repository }} 2>/dev/null || true
+          git push --delete origin latest-debug 2>/dev/null || true
+
       - name: Publicar Release con APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-debug
           name: "IPTV Player - Debug APK"
-          body: "APK de debug generado automáticamente. Instala directamente en tu Android."
+          body: |
+            APK actualizado automáticamente.
+            Commit: ${{ github.event.head_commit.message }}
+            Fecha: ${{ github.run_id }}
           prerelease: false
+          make_latest: true
           files: app/build/outputs/apk/debug/app-debug.apk
           token: ${{ secrets.GITHUB_TOKEN }}
 
