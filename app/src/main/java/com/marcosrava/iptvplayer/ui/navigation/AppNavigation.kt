@@ -17,18 +17,21 @@ import com.marcosrava.iptvplayer.ui.screens.BrowserScreen
 import com.marcosrava.iptvplayer.ui.screens.FavoritesScreen
 import com.marcosrava.iptvplayer.ui.screens.HomeScreen
 import com.marcosrava.iptvplayer.ui.screens.PlaylistsScreen
+import com.marcosrava.iptvplayer.ui.screens.VpnScreen
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    object Home : Screen("home", "Canales", Icons.Default.Tv)
-    object Playlists : Screen("playlists", "Listas", Icons.Default.PlaylistPlay)
+    object Home      : Screen("home",      "Canales",   Icons.Default.Tv)
+    object Playlists : Screen("playlists", "Listas",    Icons.Default.PlaylistPlay)
     object Favorites : Screen("favorites", "Favoritos", Icons.Default.Favorite)
-    object Browser : Screen("browser", "Ubuntu", Icons.Default.Computer)
+    object Vpn       : Screen("vpn",       "VPN",       Icons.Default.VpnKey)
+    object Browser   : Screen("browser",   "Ubuntu",    Icons.Default.Computer)
 }
 
 val bottomNavItems = listOf(
     Screen.Home,
     Screen.Playlists,
-    Screen.Favorites
+    Screen.Favorites,
+    Screen.Vpn
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -81,6 +84,9 @@ fun AppNavigation() {
             }
             composable(Screen.Favorites.route) {
                 FavoritesScreen()
+            }
+            composable(Screen.Vpn.route) {
+                VpnScreen()
             }
             composable(Screen.Browser.route) {
                 BrowserScreen(
