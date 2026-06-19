@@ -14,6 +14,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.marcosrava.iptvplayer.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -24,14 +25,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import javax.inject.Inject
 
 enum class VpnStatus { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
 enum class VpnCountry(val displayName: String, val flag: String, val host: String) {
-    FRANCE("Francia",    "🇫🇷", "france.privateinternetaccess.com"),
-    SPAIN("España",      "🇪🇸", "spain.privateinternetaccess.com"),
-    ARGENTINA("Argentina","🇦🇷", "argentina.privateinternetaccess.com")
+    FRANCE("Francia",     "🇫🇷", "france.privacy.network"),
+    SPAIN("España",       "🇪🇸", "spain.privacy.network"),
+    ARGENTINA("Argentina","🇦🇷", "argentina.privacy.network")
 }
 
 data class VpnUiState(
@@ -65,6 +68,16 @@ class VpnViewModel @Inject constructor(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
             context.getSystemService(VpnManager::class.java)
         else null
+
+    /** Certificado CA de PIA bundleado en res/raw/pia_ca.crt */
+    private val piaCaCert: X509Certificate? by lazy {
+        runCatching {
+            val factory = CertificateFactory.getInstance("X.509")
+            context.resources.openRawResource(R.raw.pia_ca).use { stream ->
+                factory.generateCertificate(stream) as X509Certificate
+            }
+        }.getOrNull()
+    }
 
     init {
         // Cargar credenciales guardadas
@@ -138,7 +151,7 @@ class VpnViewModel @Inject constructor(
 
         return try {
             val profile = android.net.Ikev2VpnProfile.Builder(country.host, country.host)
-                .setAuthUsernamePassword(username, password, null)
+                .setAuthUsernamePassword(username, password, piaCaCert)
                 .build()
 
             val approvalIntent = vpnManager?.provisionVpnProfile(profile)
